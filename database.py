@@ -9,6 +9,9 @@ import src.config as config
 import src.cryption as cryption
 
 output_dir = "./"
+# Version of the resource list that is currently being downloaded, stored so the
+# merged database can record which game version it was built from.
+RESOURCE_VERSION = None
 libc = ctypes.cdll.LoadLibrary("./src/bisque/BisquseDLL.dll")
 libc.CreateFromKey.argtypes = [ctypes.c_char_p]
 libc.CreateFromKey.restype = ctypes.c_void_p
@@ -29,6 +32,9 @@ def check_resources():
         database_url = decoded['resource_list_uri']
         filename = database_url.split('/')[-1]
         version = filename.split("_")[0]
+
+        global RESOURCE_VERSION
+        RESOURCE_VERSION = version
 
         if not os.path.isfile("./sakura.db"):
             decrypted_filename = download_resource_file(database_url, filename)  # Get the decrypted filename
@@ -61,7 +67,7 @@ def extract_resource_urls(json_filename):
         with open(json_filename, 'r', encoding='utf-8') as input_file:
             data = json.load(input_file)
             urls = [
-                f"{resource.get('url')}/{resource.get('name')}"
+                f"{resource.get('url')}/{resource.get('name')}{resource.get('query_string') or ''}"
                 for resource in data['resources']
                 if resource.get('type') == "sqlite_database"
             ]
@@ -82,18 +88,19 @@ def check_database_version(version):
             conn.close()
             os.remove("sakura.db")
             return check_database()
-        else:
-            cursor.execute("SELECT * FROM Version")
-            rows = cursor.fetchall()
-            for row in rows:
-                if row[0] == version:
-                    print("Database is up to date!")
-                    return None
-                else:
-                    print("Updating database...")
-                    conn.close()
-                    os.remove("sakura.db")
-                    return check_database()
+
+        cursor.execute("SELECT * FROM Version")
+        rows = cursor.fetchall()
+        current = rows[0][0] if rows else None
+        conn.close()
+
+        if current == version:
+            print("Database is up to date!")
+            return None
+
+        print("Updating database...")
+        os.remove("sakura.db")
+        return check_database()
     except Exception as e:
         print(f"Error in check_database_version: {e}")
         return None
@@ -108,7 +115,7 @@ def check_database():
 
 def download_and_decrypt_database(url):
     try:
-        filename = url.split('/')[-1]
+        filename = url.split('?')[0].split('/')[-1]
         name = filename.split("-")[0] + ".nty"
         filepath = os.path.join(output_dir, name)
         response = requests.get(url)
@@ -184,7 +191,7 @@ def process_files():
             db_decrypted = db_encrypted.replace('.nty', '.db')
             dec_db(db_encrypted, db_decrypted)
             os.remove(db_encrypted)
-        
+
         migrate_databases()
     except Exception as e:
         print(f"Error in process_files: {e}")
@@ -192,12 +199,13 @@ def process_files():
 def migrate_databases():
     try:
         destination_db_path = './sakura.db'
-        source_db_paths = [
-            './sakura_master_db_002.db', './sakura_master_db_003.db', './sakura_master_db_004.db',
-            './sakura_master_db_005.db', './sakura_master_db_006.db', './sakura_master_db_007.db',
-            './sakura_master_db_008.db', './sakura_master_db_009.db', './sakura_master_db_010.db',
-            './sakura_master_db_011.db'
-        ]
+
+        # Collect the shards that were actually produced instead of relying on a
+        # hardcoded list, which silently skipped shards when names shifted.
+        source_db_paths = sorted(
+            os.path.join('.', file) for file in os.listdir('.')
+            if file.startswith('sakura_master_db_') and file.endswith('.db')
+        )
 
         destination_conn = sqlite3.connect(destination_db_path)
         destination_cursor = destination_conn.cursor()
@@ -211,9 +219,8 @@ def migrate_databases():
         for delete in source_db_paths:
             os.remove(delete)
 
-        for file in os.listdir('.'):
-            if file.endswith('.nty'):
-                insert_version_into_db(file)
+        if RESOURCE_VERSION:
+            insert_version_into_db(RESOURCE_VERSION)
 
     except Exception as e:
         print(f"Error in migrate_databases: {e}")
@@ -228,6 +235,10 @@ def migrate_database(source_db_path, destination_cursor):
 
         for table in tables:
             table_name = table[0]
+
+            # sqlite_sequence is an internal table SQLite refuses to drop
+            if table_name == 'sqlite_sequence':
+                continue
 
             destination_cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
             source_cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}';")
@@ -251,16 +262,15 @@ def migrate_database(source_db_path, destination_cursor):
     except Exception as e:
         print(f"Error in migrate_database: {e}")
 
-def insert_version_into_db(file):
+def insert_version_into_db(version):
     try:
-        ver = ''.join(filter(str.isdigit, file))
         conn = sqlite3.connect('./sakura.db')
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS Version (Version TEXT)''')
-        cursor.execute("INSERT INTO Version VALUES (?)", (ver,))
+        cursor.execute("DELETE FROM Version")
+        cursor.execute("INSERT INTO Version VALUES (?)", (version,))
         conn.commit()
         conn.close()
-        os.remove(file)
     except Exception as e:
         print(f"Error in insert_version_into_db: {e}")
 

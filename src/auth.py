@@ -51,22 +51,20 @@ def build_user_data():
     config.USER_INFO["adid"] = config.USER_INFO["adid"] or utils.generate_gaid()
     config.USER_INFO["udid"] = config.USER_INFO["udid"] or utils.generate_idfa()
 
-    user_data = (
-        '{'+f'"uuid":"{config.USER_INFO["uuid"]}",'
-        f'"country_code":"CA",'
-        f'"currency_unit":"CAD",'
-        f'"idfa":"00000000-0000-0000-0000-000000000000",'
-        f'"locale":"en"' if config.VERSION == 'gb' else ''
-    )
+    fields = {
+        "uuid": config.USER_INFO["uuid"],
+        "country_code": "CA",
+        "currency_unit": "CAD",
+        "idfa": "00000000-0000-0000-0000-000000000000",
+        "locale": "en",
+    }
 
     if config.USER_INFO['platform'] == 'android':
-        user_data += f',"adid":"{config.USER_INFO["adid"]}"'
+        fields["adid"] = config.USER_INFO["adid"]
     elif config.USER_INFO['platform'] == 'ios':
-        user_data += f',"udid":"{config.USER_INFO["udid"]}"'
-    
-    user_data += '}' # <-- This is weird, but the json is not closed properly in the game's request. Consider removing this line if it causes issues.
+        fields["udid"] = config.USER_INFO["udid"]
 
-    return user_data
+    return json.dumps(fields)
 
 def handle_registration_response(data):
     """Processes server response after registration."""

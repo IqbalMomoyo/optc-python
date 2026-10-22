@@ -4,6 +4,7 @@ from . import cryption
 # API and Version Information
 API_BASE_URL = "https://app.gb.onepiece-tc.jp"
 VERSION = 'gb'  # Example versions: 'gb' or 'jp'
+GAME_VERSION = '16.2.0'  # Client version reported to the server
 SESSION = requests.Session()
 
 # User and Authentication Information
@@ -35,7 +36,7 @@ def update_request_headers(session_id=None):
 
 def get_api_url():
     """Returns the full API URL based on the version."""
-    return API_BASE_URL
+    return API_BASE_URL if VERSION == 'gb' else 'https://app.onepiece-tc.jp'
 
 def get_api_host():
     """Returns the API host based on the version."""
@@ -44,5 +45,4 @@ def get_api_host():
 def get_user_agent():
     """Returns the user agent based on platform and version."""
     platform = 'android' if USER_INFO['platform'] == 'android' else 'ios'
-    now_version = '14.0.0'
-    return f'sakura/{now_version} ({platform}; 7.1.2; SM-G935F)' if platform == 'android' else f'sakura/{now_version} (iPhone; iOS 15.3.1; iPhone14,5)'
+    return f'sakura/{GAME_VERSION} ({platform}; 7.1.2; SM-G935F)' if platform == 'android' else f'sakura/{GAME_VERSION} (iPhone; iOS 15.3.1; iPhone14,5)'

@@ -25,21 +25,49 @@ def create_from_key(key):
         print(f"Error in create_from_key: {e}")
         return None
 
+
+class DecryptedBuffer:
+    """
+    Holds a buffer owned by the Bisque DLL.
+
+    The DLL allocates the plaintext buffer and expects the caller to release it
+    with ReleaseBuffer. Reading .value copies the bytes out, and the release
+    happens once the buffer is garbage collected, so the pointer can never
+    outlive the data it points at.
+    """
+
+    def __init__(self, buffer):
+        self._buffer = buffer
+        self._value = buffer.value if buffer else None
+
+    @property
+    def value(self):
+        return self._value
+
+    def __del__(self):
+        buffer = getattr(self, "_buffer", None)
+        if buffer:
+            try:
+                libc.ReleaseBuffer(buffer)
+            except Exception:
+                pass
+            self._buffer = None
+
+
 def decrypt(key, data_to_decrypt):
     """
     Decrypt the given data using the provided key.
+
+    Returns a DecryptedBuffer. The underlying DLL buffer is only released once
+    the caller has finished reading .value, otherwise the pointer would dangle.
     """
     try:
         decrypted = ctypes.c_char_p()
         libc.Decrypt(key, data_to_decrypt.encode('utf-8'),  ctypes.byref(decrypted))
-        
-        return decrypted
+        return DecryptedBuffer(decrypted)
     except Exception as e:
         print(f"Error in decrypt: {e}")
         return None
-    finally:
-        if decrypted:
-            release_buffer(decrypted)
 
 
 def encrypt(key, data_to_encrypt):
@@ -76,12 +104,13 @@ def nty_decryptor(key, filename, extension=None):
     """
     Decrypt an NTY file and save the decrypted data.
     """
+    decrypted = None
     try:
         with open(f"./{filename}", "rb") as file:
             encrypted = file.read()
         encryptedLength = len(encrypted)
 
-        decrypted = ctypes.c_char_p(None)  # 
+        decrypted = ctypes.c_char_p(None)
         decryptedLength = libc.DecryptNTY(key, encrypted, encryptedLength, ctypes.byref(decrypted), True)
         if extension == None:
             name = f"{filename}"

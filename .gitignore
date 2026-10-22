@@ -1,2 +1,6 @@
 env
 *.pyc
+sakura.db
+*.nty
+*.nty.json
+sakura_master_db_*.db

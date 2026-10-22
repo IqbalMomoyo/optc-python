@@ -23,7 +23,7 @@ def check_game_version():
     
     if response.status_code == 200:
         server_version = response.json().get('now_version')
-        current_version = '13.0.0'  # This should be centrally managed if it changes frequently.
+        current_version = config.GAME_VERSION
         if server_version and server_version != current_version:
             print(f"Update needed. Server version: {server_version}, Current version: {current_version}")
             return False
